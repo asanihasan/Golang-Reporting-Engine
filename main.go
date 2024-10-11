@@ -8,7 +8,7 @@ import (
 
 
 func main() {
-    f, err := excelize.OpenFile("Book1.xlsx")
+    f, err := excelize.OpenFile("source/Book1.xlsx")
     if err != nil {
         fmt.Println(err)
         return
@@ -23,7 +23,7 @@ func main() {
 	f.SetCellValue("Sheet1", "A2", "Hello world.")
     
     // Save the spreadsheet with the origin path.
-    if err := f.SaveAs("Book2.xlsx"); err != nil {
+    if err := f.SaveAs("result/Book2.xlsx"); err != nil {
         fmt.Println(err)
     }
 }
