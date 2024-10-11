@@ -71,6 +71,15 @@ func addFile(sheetData Sheet, file string) (string, error) {
 		}
 	}
 
+	dirPath := "result"
+
+	// Create the directory (and any necessary parent directories)
+	err = os.MkdirAll(dirPath, os.ModePerm)
+	if err != nil {
+		return "", fmt.Errorf("Failed to create directory")
+	}
+
+
 	// Save the updated spreadsheet to the new file (with the provided name).
 	if err := f.SaveAs("result/" + name + ".xlsx"); err != nil {
 		return "", fmt.Errorf("failed to save file as %s: %w", name, err)
@@ -97,7 +106,7 @@ func generate(c *gin.Context) {
 	
 	result, err := addFile(sheetData, file)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON format"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "failed modify file"})
 		return
 	}
 
