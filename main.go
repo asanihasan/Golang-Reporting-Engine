@@ -13,26 +13,17 @@ func main() {
 	router := gin.Default()
 
 	//membuat route dengan method GET
-	router.GET("/", func(c *gin.Context) {
-
-		err := addFile()
-		if err != nil {
-			// Handle the error appropriately, for example, logging it or exiting.
-			fmt.Println("Error occurred:", err)
-			return
-		}
-		
+    router.POST("/generate", generate)
+	router.GET("/test", func(c *gin.Context) {
 		fmt.Println("File processed successfully!")
 		// return response JSON
 		c.JSON(200, gin.H{
-			"message": "Hello World!",
+			"result": "test Success!",
 		})
 	})
 
 	//mulai server dengan port 3000
 	router.Run(":3000")
-	
-
 }
 
 func addFile() error {
@@ -60,4 +51,17 @@ func addFile() error {
 	}
 
 	return nil
+}
+
+func generate(c *gin.Context) {
+	err := addFile()
+	if err != nil {
+		// Handle the error appropriately, for example, logging it or exiting.
+		fmt.Println("Error occurred:", err)
+		return
+	}
+	
+	c.JSON(200, gin.H{
+		"result": "test Success!",
+	})
 }
