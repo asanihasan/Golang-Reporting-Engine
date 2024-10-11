@@ -3,8 +3,10 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/xuri/excelize/v2"
@@ -17,31 +19,29 @@ type Cell struct {
 
 type Sheet map[string]map[string]Cell
 
+const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
 func main() {
-	//inisialiasai Gin
 	router := gin.Default()
 
-	//membuat route dengan method GET
     router.GET("/templates", template)
     router.POST("/upload", upload)
     router.POST("/generate", generate)
 	router.GET("/test", func(c *gin.Context) {
-		fmt.Println("File processed successfully!")
-		// return response JSON
 		c.JSON(200, gin.H{
 			"result": "test Success!",
 		})
 	})
 
-	//mulai server dengan port 3000
 	router.Run(":3000")
 }
 
-func addFile(sheetData Sheet, file string, name string) error {
+func addFile(sheetData Sheet, file string) (string, error) {
+	name := generateRandomString(32)
 	// Open the existing spreadsheet file (template file).
 	f, err := excelize.OpenFile("source/" + file) // Use the provided template file
 	if err != nil {
-		return fmt.Errorf("failed to open file %s: %w", file, err)
+		return "", fmt.Errorf("failed to open file %s: %w", file, err)
 	}
 
 	// Defer close with error handling.
@@ -56,7 +56,7 @@ func addFile(sheetData Sheet, file string, name string) error {
 		// Check if the sheet exists, create it if it doesn't
 		index, err := f.GetSheetIndex(sheetName)
 		if err != nil {
-			return fmt.Errorf("failed to get sheet index for %s: %w", sheetName, err)
+			return "", fmt.Errorf("failed to get sheet index for %s: %w", sheetName, err)
 		}
 		if index == -1 {
 			// Create a new sheet if it doesn't exist
@@ -66,17 +66,17 @@ func addFile(sheetData Sheet, file string, name string) error {
 		// Loop through each cell and write the value to the Excel file
 		for cell, data := range cells {
 			if err := f.SetCellValue(sheetName, cell, data.Value); err != nil {
-				return fmt.Errorf("failed to set cell value for %s in %s: %w", cell, sheetName, err)
+				return "", fmt.Errorf("failed to set cell value for %s in %s: %w", cell, sheetName, err)
 			}
 		}
 	}
 
 	// Save the updated spreadsheet to the new file (with the provided name).
 	if err := f.SaveAs("result/" + name + ".xlsx"); err != nil {
-		return fmt.Errorf("failed to save file as %s: %w", name, err)
+		return "", fmt.Errorf("failed to save file as %s: %w", name, err)
 	}
 
-	return nil
+	return name, nil
 }
 
 func generate(c *gin.Context) {
@@ -95,21 +95,13 @@ func generate(c *gin.Context) {
 	file := c.PostForm("file")
 	name := c.PostForm("name")
 	
-	err := addFile(sheetData, file, name)
+	result, err := addFile(sheetData, file)
 	if err != nil {
-		// Handle the error appropriately, for example, logging it or exiting.
-		fmt.Println("Error occurred:", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON format"})
 		return
 	}
 
-	// Return success response
-
-
-	c.JSON(http.StatusOK, gin.H{
-		"file": file,
-		"name":  name,
-		"data":  data,
-	})
+	downloadFile(c, "result/"+result+".xlsx", name+".xlsx")
 }
 
 func upload(c *gin.Context) {
@@ -168,4 +160,44 @@ func template(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"files": fileNames,
 	})
+}
+
+func generateRandomString(length int) string {
+	seededRand := rand.New(rand.NewSource(time.Now().UnixNano()))
+	b := make([]byte, length)
+	for i := range b {
+		b[i] = charset[seededRand.Intn(len(charset))]
+	}
+	return string(b)
+}
+
+func downloadFile(c *gin.Context, sourceFile string, downloadFileName string) {
+	// Read the content of the source file
+	content, err := os.ReadFile(sourceFile)
+	if err != nil {
+		// Handle error if the file cannot be read
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"msg": "Could not read file",
+		})
+		return
+	}
+
+	// Set headers for the response
+	c.Header("Content-Disposition", "attachment; filename="+downloadFileName)
+	c.Header("Content-Type", "application/octet-stream") // Change to appropriate content type if necessary
+	c.Header("Accept-Length", fmt.Sprintf("%d", len(content)))
+
+	// Write the content to the response
+	if _, err := c.Writer.Write(content); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"msg": "Failed to write content",
+		})
+		return
+	}
+
+	err = os.Remove(sourceFile) 
+	if err != nil { 
+        fmt.Println("Invalid xlsx file:", err)
+    }
+
 }
