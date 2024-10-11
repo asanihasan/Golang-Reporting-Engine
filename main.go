@@ -76,7 +76,7 @@ func addFile(sheetData Sheet, file string) (string, error) {
 	// Create the directory (and any necessary parent directories)
 	err = os.MkdirAll(dirPath, os.ModePerm)
 	if err != nil {
-		return "", fmt.Errorf("Failed to create directory")
+		return "", fmt.Errorf("failed to create directory: %v\n", err)
 	}
 
 
