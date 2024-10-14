@@ -6,6 +6,8 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -33,7 +35,7 @@ func main() {
 		})
 	})
 
-	router.Run(":3000")
+	router.Run(":6969")
 }
 
 func addFile(sheetData Sheet, file string) (string, error) {
@@ -65,8 +67,17 @@ func addFile(sheetData Sheet, file string) (string, error) {
 
 		// Loop through each cell and write the value to the Excel file
 		for cell, data := range cells {
-			if err := f.SetCellValue(sheetName, cell, data.Value); err != nil {
-				return "", fmt.Errorf("failed to set cell value for %s in %s: %w", cell, sheetName, err)
+			// Check if data.Value is numeric
+			if num, err := strconv.ParseFloat(strings.TrimSpace(data.Value), 64); err == nil {
+				// If it is numeric, set as number
+				if err := f.SetCellValue(sheetName, cell, num); err != nil {
+					return "", fmt.Errorf("failed to set cell value for %s in %s: %w", cell, sheetName, err)
+				}
+			} else {
+				// If not numeric, treat it as a string
+				if err := f.SetCellValue(sheetName, cell, data.Value); err != nil {
+					return "", fmt.Errorf("failed to set cell value for %s in %s: %w", cell, sheetName, err)
+				}
 			}
 		}
 	}
@@ -76,7 +87,7 @@ func addFile(sheetData Sheet, file string) (string, error) {
 	// Create the directory (and any necessary parent directories)
 	err = os.MkdirAll(dirPath, os.ModePerm)
 	if err != nil {
-		return "", fmt.Errorf("failed to create directory: %v\n", err)
+		return "", fmt.Errorf("failed to create directory: %v", err)
 	}
 
 
@@ -210,3 +221,5 @@ func downloadFile(c *gin.Context, sourceFile string, downloadFileName string) {
     }
 
 }
+
+
