@@ -2,7 +2,7 @@
 
 ## Intoduction
 
-Golang Reporting Engine is a simple tool built using Go that allows you to generate reports based on Excel templates. You can pass JSON formated data, and the tool will populate the data into the specified cells of the Excel file, generating a downloadable report. Thanks to [Excelize](https://github.com/golang/go/issues/61881) for make it this project easier to implement.
+Golang Reporting Engine is a simple tool built using Go that allows you to generate reports based on Excel templates. You can pass JSON formated data, and the tool will populate the data into the specified cells of the Excel file, generating a downloadable report. Thanks to [Excelize](https://github.com/qax-os/excelize) for make it this project easier to implement.
 
 # Main Functionality
 
