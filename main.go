@@ -16,21 +16,48 @@ import (
 
 type Cell struct {
 	Value string `json:"value"`
-	ID    int    `json:"id"`
+	ID    string    `json:"id"`
 }
 
 type Sheet map[string]map[string]Cell
 
-type CellStyle struct {
-	ID    string `json:"id"`
-	Style string `json:"style"`
+type Font struct {
+    Bold   bool   `json:"bold"`
+    Italic bool   `json:"italic"`
+    Size   int    `json:"size"`
+    Color  string `json:"color"`
 }
+
+type Fill struct {
+    Type    string   `json:"type"`
+    Color   []string `json:"color"`
+    Pattern int      `json:"pattern"`
+}
+
+type Border struct {
+    Type  string `json:"type"`
+    Color string `json:"color"`
+    Style int    `json:"style"`
+}
+
+type Alignment struct {
+    Horizontal string `json:"horizontal"`
+    Vertical   string `json:"vertical"`
+}
+
+type StyleOptions struct {
+    Font      *Font      `json:"font"`
+    Fill      *Fill      `json:"fill"`
+    Border    []Border  `json:"border"`
+    Alignment *Alignment `json:"alignment"`
+}
+
 
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 func main() {
 	router := gin.Default()
-
+	
     router.GET("/templates", template)
     router.POST("/upload", upload)
     router.POST("/generate", generate)
@@ -43,7 +70,7 @@ func main() {
 	router.Run(":6969")
 }
 
-func addFile(sheetData Sheet, file string) (string, error) {
+func addFile(sheetData Sheet, file string, styling map[string]StyleOptions) (string, error) {
 	name := generateRandomString(32)
 	// Open the existing spreadsheet file (template file).
 	f, err := excelize.OpenFile("source/" + file) // Use the provided template file
@@ -84,6 +111,13 @@ func addFile(sheetData Sheet, file string) (string, error) {
 					return "", fmt.Errorf("failed to set cell value for %s in %s: %w", cell, sheetName, err)
 				}
 			}
+			styleOptions, exists := styling[data.ID]
+			if exists {
+				excelStyle, err := CreateExcelStyle(f, &styleOptions)
+				if err == nil {
+					f.SetCellStyle(sheetName, cell, cell, excelStyle)
+				}
+			}
 		}
 	}
 
@@ -107,7 +141,7 @@ func addFile(sheetData Sheet, file string) (string, error) {
 func generate(c *gin.Context) {
 	
 	var sheetData Sheet
-	var styles []CellStyle
+	var styles map[string]StyleOptions
 	
 	// Get the JSON string from a form-encoded POST parameter called 'sheet'
 	data := c.PostForm("data")
@@ -127,7 +161,7 @@ func generate(c *gin.Context) {
 	file := c.PostForm("file")
 	name := c.PostForm("name")
 	
-	result, err := addFile(sheetData, file)
+	result, err := addFile(sheetData, file, styles)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "failed modify file"})
 		return
@@ -234,5 +268,49 @@ func downloadFile(c *gin.Context, sourceFile string, downloadFileName string) {
 
 }
 
+func CreateExcelStyle(f *excelize.File, styleOptions *StyleOptions) (int, error) {
+    style := &excelize.Style{}
 
+    // Apply font style if provided
+    if styleOptions != nil && styleOptions.Font != nil {
+        style.Font = &excelize.Font{
+            Bold:   styleOptions.Font.Bold,
+            Italic: styleOptions.Font.Italic,
+            Size:   float64(styleOptions.Font.Size),
+            Color:  styleOptions.Font.Color,
+        }
+    }
 
+    // Apply fill style if provided
+    if styleOptions != nil && styleOptions.Fill != nil {
+        style.Fill = excelize.Fill{
+            Type:    styleOptions.Fill.Type,
+            Color:   styleOptions.Fill.Color,
+            Pattern: styleOptions.Fill.Pattern,
+        }
+    }
+
+    // Apply border style if provided
+    if styleOptions != nil && len(styleOptions.Border) > 0 {
+        var borders []excelize.Border
+        for _, b := range styleOptions.Border {
+            borders = append(borders, excelize.Border{
+                Type:  b.Type,
+                Color: b.Color,
+                Style: b.Style,
+            })
+        }
+        style.Border = borders
+    }
+
+    // Apply alignment style if provided
+    if styleOptions != nil && styleOptions.Alignment != nil {
+        style.Alignment = &excelize.Alignment{
+            Horizontal: styleOptions.Alignment.Horizontal,
+            Vertical:   styleOptions.Alignment.Vertical,
+        }
+    }
+
+    // Create the style in excelize
+    return f.NewStyle(style)
+}
