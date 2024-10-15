@@ -72,7 +72,7 @@ Example JSON Data of "data":
 
 In this example, the JSON defines two sheets (Sheet1 and Sheet2). Each sheet has several cells (A1, A2, etc.) with corresponding values to be written into the Excel file.
 
-Example JSON Data of "style" to apply styling to cell with id parameter if "12":
+Example JSON Data of "style" to apply styling to cell with id = "12":
 
 ```
 {
