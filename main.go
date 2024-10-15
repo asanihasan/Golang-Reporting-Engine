@@ -21,6 +21,11 @@ type Cell struct {
 
 type Sheet map[string]map[string]Cell
 
+type CellStyle struct {
+	ID    string `json:"id"`
+	Style string `json:"style"`
+}
+
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 func main() {
@@ -102,12 +107,19 @@ func addFile(sheetData Sheet, file string) (string, error) {
 func generate(c *gin.Context) {
 	
 	var sheetData Sheet
+	var styles []CellStyle
 	
 	// Get the JSON string from a form-encoded POST parameter called 'sheet'
 	data := c.PostForm("data")
+	style := c.PostForm("style")
 	
 	// Unmarshal the JSON string into the 'sheetData' structure
 	if err := json.Unmarshal([]byte(data), &sheetData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON format"})
+		return
+	}
+	
+	if err := json.Unmarshal([]byte(style), &styles); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON format"})
 		return
 	}
@@ -221,5 +233,6 @@ func downloadFile(c *gin.Context, sourceFile string, downloadFileName string) {
     }
 
 }
+
 
 
