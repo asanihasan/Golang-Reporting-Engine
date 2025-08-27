@@ -53,6 +53,9 @@ type StyleOptions struct {
 }
 
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+// helper funcs so we don't depend on excelize's own ptr helpers
+func strptr(s string) *string { return &s }
+func boolptr(b bool) *bool    { return &b }
 
 func main() {
 	router := gin.Default()
@@ -133,8 +136,8 @@ func addFile(sheetData Sheet, file string, styling map[string]StyleOptions) (str
 
 	// ⚙️ Ensure Excel recalculates everything on open
 	_ = f.SetCalcProps(&excelize.CalcPropsOptions{
-		CalcMode:       excelize.StringPtr("auto"), // "manual", "auto", "autoNoTable"
-		FullCalcOnLoad: excelize.BoolPtr(true),     // force full rebuild on open
+	    CalcMode:       strptr("auto"),
+	    FullCalcOnLoad: boolptr(true),
 	})
 
 	// 🔄 Drop stale calc chain so Excel rebuilds dependencies
