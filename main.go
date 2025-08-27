@@ -16,51 +16,50 @@ import (
 
 type Cell struct {
 	Value string `json:"value"`
-	ID    string    `json:"id"`
+	ID    string `json:"id"`
 }
 
 type Sheet map[string]map[string]Cell
 
 type Font struct {
-    Bold   bool   `json:"bold"`
-    Italic bool   `json:"italic"`
-    Size   int    `json:"size"`
-    Color  string `json:"color"`
+	Bold   bool   `json:"bold"`
+	Italic bool   `json:"italic"`
+	Size   int    `json:"size"`
+	Color  string `json:"color"`
 }
 
 type Fill struct {
-    Type    string   `json:"type"`
-    Color   []string `json:"color"`
-    Pattern int      `json:"pattern"`
+	Type    string   `json:"type"`
+	Color   []string `json:"color"`
+	Pattern int      `json:"pattern"`
 }
 
 type Border struct {
-    Type  string `json:"type"`
-    Color string `json:"color"`
-    Style int    `json:"style"`
+	Type  string `json:"type"`
+	Color string `json:"color"`
+	Style int    `json:"style"`
 }
 
 type Alignment struct {
-    Horizontal string `json:"horizontal"`
-    Vertical   string `json:"vertical"`
+	Horizontal string `json:"horizontal"`
+	Vertical   string `json:"vertical"`
 }
 
 type StyleOptions struct {
-    Font      *Font      `json:"font"`
-    Fill      *Fill      `json:"fill"`
-    Border    []Border  `json:"border"`
-    Alignment *Alignment `json:"alignment"`
+	Font      *Font      `json:"font"`
+	Fill      *Fill      `json:"fill"`
+	Border    []Border   `json:"border"`
+	Alignment *Alignment `json:"alignment"`
 }
-
 
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 func main() {
 	router := gin.Default()
-	
-    router.GET("/templates", template)
-    router.POST("/upload", upload)
-    router.POST("/generate", generate)
+
+	router.GET("/templates", template)
+	router.POST("/upload", upload)
+	router.POST("/generate", generate)
 	router.GET("/test", func(c *gin.Context) {
 		c.JSON(200, gin.H{
 			"result": "test Success!",
@@ -70,67 +69,84 @@ func main() {
 	router.Run(":6969")
 }
 
+// parseNumeric tries to coerce a string into float64 (handles "1,234.56" etc)
+func parseNumeric(s string) (float64, bool) {
+	u := strings.TrimSpace(s)
+	if u == "" {
+		return 0, false
+	}
+	// very basic normalization: remove thousands separators
+	u = strings.ReplaceAll(u, ",", "")
+	// optional: handle trailing/leading spaces already trimmed
+	if n, err := strconv.ParseFloat(u, 64); err == nil {
+		return n, true
+	}
+	return 0, false
+}
+
 func addFile(sheetData Sheet, file string, styling map[string]StyleOptions) (string, error) {
 	name := generateRandomString(32)
+
 	// Open the existing spreadsheet file (template file).
-	f, err := excelize.OpenFile("source/" + file) // Use the provided template file
+	f, err := excelize.OpenFile("source/" + file)
 	if err != nil {
 		return "", fmt.Errorf("failed to open file %s: %w", file, err)
 	}
-
-	// Defer close with error handling.
 	defer func() {
 		if err := f.Close(); err != nil {
 			fmt.Println("failed to close file:", err)
 		}
 	}()
 
-	// Loop over each sheet and its cells in the sheetData parameter.
+	// Write data into sheets
 	for sheetName, cells := range sheetData {
-		// Check if the sheet exists, create it if it doesn't
+		// create sheet if missing
 		index, err := f.GetSheetIndex(sheetName)
 		if err != nil {
 			return "", fmt.Errorf("failed to get sheet index for %s: %w", sheetName, err)
 		}
 		if index == -1 {
-			// Create a new sheet if it doesn't exist
 			f.NewSheet(sheetName)
 		}
 
-		// Loop through each cell and write the value to the Excel file
-		for cell, data := range cells {
-			// Check if data.Value is numeric
-			if num, err := strconv.ParseFloat(strings.TrimSpace(data.Value), 64); err == nil {
-				// If it is numeric, set as number
-				if err := f.SetCellValue(sheetName, cell, num); err != nil {
-					return "", fmt.Errorf("failed to set cell value for %s in %s: %w", cell, sheetName, err)
+		for addr, data := range cells {
+			// Write numbers as numbers, else as strings
+			if n, ok := parseNumeric(data.Value); ok {
+				if err := f.SetCellValue(sheetName, addr, n); err != nil {
+					return "", fmt.Errorf("failed to set numeric value for %s in %s: %w", addr, sheetName, err)
 				}
 			} else {
-				// If not numeric, treat it as a string
-				if err := f.SetCellValue(sheetName, cell, data.Value); err != nil {
-					return "", fmt.Errorf("failed to set cell value for %s in %s: %w", cell, sheetName, err)
+				if err := f.SetCellValue(sheetName, addr, data.Value); err != nil {
+					return "", fmt.Errorf("failed to set string value for %s in %s: %w", addr, sheetName, err)
 				}
 			}
-			styleOptions, exists := styling[data.ID]
-			if exists {
+
+			// Apply style if provided
+			if styleOptions, exists := styling[data.ID]; exists {
 				excelStyle, err := CreateExcelStyle(f, &styleOptions)
 				if err == nil {
-					f.SetCellStyle(sheetName, cell, cell, excelStyle)
+					_ = f.SetCellStyle(sheetName, addr, addr, excelStyle)
 				}
 			}
 		}
 	}
 
-	dirPath := "result"
+	// ⚙️ Ensure Excel recalculates everything on open
+	_ = f.SetCalcProps(&excelize.CalcPropsOptions{
+		CalcMode:       excelize.StringPtr("auto"), // "manual", "auto", "autoNoTable"
+		FullCalcOnLoad: excelize.BoolPtr(true),     // force full rebuild on open
+	})
 
-	// Create the directory (and any necessary parent directories)
-	err = os.MkdirAll(dirPath, os.ModePerm)
-	if err != nil {
+	// 🔄 Drop stale calc chain so Excel rebuilds dependencies
+	_ = f.DeleteCalcChain()
+
+	// Ensure output dir exists
+	dirPath := "result"
+	if err := os.MkdirAll(dirPath, os.ModePerm); err != nil {
 		return "", fmt.Errorf("failed to create directory: %v", err)
 	}
 
-
-	// Save the updated spreadsheet to the new file (with the provided name).
+	// Save the updated spreadsheet
 	if err := f.SaveAs("result/" + name + ".xlsx"); err != nil {
 		return "", fmt.Errorf("failed to save file as %s: %w", name, err)
 	}
@@ -139,20 +155,18 @@ func addFile(sheetData Sheet, file string, styling map[string]StyleOptions) (str
 }
 
 func generate(c *gin.Context) {
-	
 	var sheetData Sheet
 	var styles map[string]StyleOptions
-	
-	// Get the JSON string from a form-encoded POST parameter called 'sheet'
+
+	// Get the JSON string from form fields
 	data := c.PostForm("data")
 	style := c.PostForm("style")
-	
-	// Unmarshal the JSON string into the 'sheetData' structure
+
+	// Unmarshal inputs
 	if err := json.Unmarshal([]byte(data), &sheetData); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON format"})
 		return
 	}
-	
 	if err := json.Unmarshal([]byte(style), &styles); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON format"})
 		return
@@ -160,7 +174,7 @@ func generate(c *gin.Context) {
 
 	file := c.PostForm("file")
 	name := c.PostForm("name")
-	
+
 	result, err := addFile(sheetData, file, styles)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "failed modify file"})
@@ -171,7 +185,6 @@ func generate(c *gin.Context) {
 }
 
 func upload(c *gin.Context) {
-	// Get the uploaded file from the form-data POST request
 	file, err := c.FormFile("file")
 	if err != nil {
 		fmt.Println("Error occurred while retrieving file:", err)
@@ -179,53 +192,36 @@ func upload(c *gin.Context) {
 		return
 	}
 
-	// Save the uploaded file to a specific path
 	path := "source/" + file.Filename
-	err = c.SaveUploadedFile(file, path)
-	if err != nil {
+	if err := c.SaveUploadedFile(file, path); err != nil {
 		fmt.Println("Error occurred while saving file:", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save file."})
 		return
 	}
 
-	// Try to open the file as an xlsx to validate if it's a valid Excel file
-	_, err = excelize.OpenFile(path)
-	if err != nil {
+	if _, err := excelize.OpenFile(path); err != nil {
 		fmt.Println("Invalid xlsx file:", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Uploaded file is not a valid xlsx file."})
 		return
 	}
 
-	// If everything is valid, return success response
-	c.JSON(http.StatusOK, gin.H{
-		"message": "File uploaded and is a valid xlsx file!",
-	})
+	c.JSON(http.StatusOK, gin.H{"message": "File uploaded and is a valid xlsx file!"})
 }
 
 func template(c *gin.Context) {
 	folderPath := "./source"
-
-	// Get the list of files in the directory
 	files, err := os.ReadDir(folderPath)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to read directory",
-		})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read directory"})
 		return
 	}
-
-	// Create a slice to store the file names
 	var fileNames []string
 	for _, file := range files {
-		if !file.IsDir() { // Only include files, not directories
+		if !file.IsDir() {
 			fileNames = append(fileNames, file.Name())
 		}
 	}
-
-	// Return the list of file names as a JSON array
-	c.JSON(http.StatusOK, gin.H{
-		"files": fileNames,
-	})
+	c.JSON(http.StatusOK, gin.H{"files": fileNames})
 }
 
 func generateRandomString(length int) string {
@@ -238,79 +234,64 @@ func generateRandomString(length int) string {
 }
 
 func downloadFile(c *gin.Context, sourceFile string, downloadFileName string) {
-	// Read the content of the source file
 	content, err := os.ReadFile(sourceFile)
 	if err != nil {
-		// Handle error if the file cannot be read
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"msg": "Could not read file",
-		})
+		c.JSON(http.StatusInternalServerError, gin.H{"msg": "Could not read file"})
 		return
 	}
 
-	// Set headers for the response
 	c.Header("Content-Disposition", "attachment; filename="+downloadFileName)
-	c.Header("Content-Type", "application/octet-stream") // Change to appropriate content type if necessary
+	c.Header("Content-Type", "application/octet-stream")
 	c.Header("Accept-Length", fmt.Sprintf("%d", len(content)))
 
-	// Write the content to the response
 	if _, err := c.Writer.Write(content); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"msg": "Failed to write content",
-		})
+		c.JSON(http.StatusInternalServerError, gin.H{"msg": "Failed to write content"})
 		return
 	}
 
-	err = os.Remove(sourceFile) 
-	if err != nil { 
-        fmt.Println("Invalid xlsx file:", err)
-    }
-
+	if err := os.Remove(sourceFile); err != nil {
+		fmt.Println("Invalid xlsx file:", err)
+	}
 }
 
 func CreateExcelStyle(f *excelize.File, styleOptions *StyleOptions) (int, error) {
-    style := &excelize.Style{}
+	style := &excelize.Style{}
 
-    // Apply font style if provided
-    if styleOptions != nil && styleOptions.Font != nil {
-        style.Font = &excelize.Font{
-            Bold:   styleOptions.Font.Bold,
-            Italic: styleOptions.Font.Italic,
-            Size:   float64(styleOptions.Font.Size),
-            Color:  styleOptions.Font.Color,
-        }
-    }
+	if styleOptions != nil && styleOptions.Font != nil {
+		style.Font = &excelize.Font{
+			Bold:   styleOptions.Font.Bold,
+			Italic: styleOptions.Font.Italic,
+			Size:   float64(styleOptions.Font.Size),
+			Color:  styleOptions.Font.Color,
+		}
+	}
 
-    // Apply fill style if provided
-    if styleOptions != nil && styleOptions.Fill != nil {
-        style.Fill = excelize.Fill{
-            Type:    styleOptions.Fill.Type,
-            Color:   styleOptions.Fill.Color,
-            Pattern: styleOptions.Fill.Pattern,
-        }
-    }
+	if styleOptions != nil && styleOptions.Fill != nil {
+		style.Fill = excelize.Fill{
+			Type:    styleOptions.Fill.Type,
+			Color:   styleOptions.Fill.Color,
+			Pattern: styleOptions.Fill.Pattern,
+		}
+	}
 
-    // Apply border style if provided
-    if styleOptions != nil && len(styleOptions.Border) > 0 {
-        var borders []excelize.Border
-        for _, b := range styleOptions.Border {
-            borders = append(borders, excelize.Border{
-                Type:  b.Type,
-                Color: b.Color,
-                Style: b.Style,
-            })
-        }
-        style.Border = borders
-    }
+	if styleOptions != nil && len(styleOptions.Border) > 0 {
+		var borders []excelize.Border
+		for _, b := range styleOptions.Border {
+			borders = append(borders, excelize.Border{
+				Type:  b.Type,
+				Color: b.Color,
+				Style: b.Style,
+			})
+		}
+		style.Border = borders
+	}
 
-    // Apply alignment style if provided
-    if styleOptions != nil && styleOptions.Alignment != nil {
-        style.Alignment = &excelize.Alignment{
-            Horizontal: styleOptions.Alignment.Horizontal,
-            Vertical:   styleOptions.Alignment.Vertical,
-        }
-    }
+	if styleOptions != nil && styleOptions.Alignment != nil {
+		style.Alignment = &excelize.Alignment{
+			Horizontal: styleOptions.Alignment.Horizontal,
+			Vertical:   styleOptions.Alignment.Vertical,
+		}
+	}
 
-    // Create the style in excelize
-    return f.NewStyle(style)
+	return f.NewStyle(style)
 }
