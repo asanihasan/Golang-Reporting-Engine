@@ -3,16 +3,17 @@ FROM golang:1.21-alpine AS builder
 WORKDIR /app
 RUN apk add --no-cache ca-certificates tzdata
 
-# 1) copy module files first to leverage cache
+# bring in module files first for cache
 COPY go.mod go.sum ./
-
-# 2) force the exact excelize version + tidy
-#    (this updates go.mod/go.sum *inside the image*)
-RUN go get github.com/xuri/excelize/v2@v2.9.0 && go mod tidy
 RUN go mod download
 
-# 3) now copy the rest of the source and build
+# now copy the rest of the source
 COPY . .
+
+# FORCE excelize v2.9.0 *after* repo files are in place
+RUN go get github.com/xuri/excelize/v2@v2.9.0 && go mod tidy && go mod download
+
+# build
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o server .
 
 # ---------- runtime stage ----------
